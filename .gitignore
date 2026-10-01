@@ -5,6 +5,31 @@ build/
 dist/
 wheels/
 *.egg-info
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+ENV/
+
+# Model weights & large binary files (Keep directory via .gitkeep)
+models/*
+!models/.gitkeep
+*.gguf
+*.bin
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Local environment & secret files
+.env
+.env.local
+*.log
+
+# IDE & OS metadata
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,7 +1,16 @@
 [project]
 name = "model-host"
 version = "0.1.0"
-description = "Add your description here"
+description = "Unified Local AI Server for LLM Text Generation & Speech-to-Text with Dynamic VRAM Management"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.142.2",
+    "faster-whisper>=1.2.1",
+    "llama-cpp-python>=0.3.2",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.54.0",
+]
+
+[tool.uv.sources]
+llama-cpp-python = { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.26-vulkan/llama_cpp_python-0.3.26-py3-none-win_amd64.whl" }

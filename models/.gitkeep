@@ -1,0 +1,2 @@
+# Placeholder to keep the models directory tracked in git.
+# Model weights (*.gguf, *.bin) are ignored in .gitignore.

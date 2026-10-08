@@ -19,13 +19,13 @@ LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "./models/Llama-3.2-1B-Instruct-Q4_
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")  # or "tiny", "small", "medium"
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")  # "cpu" (recommended) or "cuda"
 
-
 class ChatMessage(BaseModel):
+    model_config = {"extra": "allow"}
     role: str
     content: str
 
-
 class ChatRequest(BaseModel):
+    model_config = {"extra": "allow"}
     model: str = "default-model"
     messages: List[ChatMessage]
     temperature: Optional[float] = 0.7
@@ -110,6 +110,15 @@ class ModelManager:
 manager = ModelManager()
 
 
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "active_model": manager.active_model_type,
+        "llm_path": resolve_llm_model_path(),
+    }
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatRequest):
     try:
@@ -119,10 +128,11 @@ async def chat_completions(request: ChatRequest):
         # Format messages for llama_cpp
         formatted_messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
-        response = llm.create_chat_completion(
+        response = await asyncio.to_thread(
+            llm.create_chat_completion,
             messages=formatted_messages,
             temperature=request.temperature,
-            max_tokens=request.max_tokens
+            max_tokens=request.max_tokens,
         )
         return response
     except Exception as e:
@@ -140,12 +150,16 @@ async def transcribe_audio(file: UploadFile = File(...)):
         # Get Whisper (this will trigger a VRAM swap if the LLM is currently loaded)
         whisper = await manager.get_whisper()
 
-        segments, info = whisper.transcribe(temp_audio_path, beam_size=5)
-        full_text = "".join([segment.text for segment in segments])
+        def _run_transcription():
+            segments, info = whisper.transcribe(temp_audio_path, beam_size=5)
+            full_text = "".join([segment.text for segment in segments])
+            return full_text.strip(), info.language
+
+        full_text, language = await asyncio.to_thread(_run_transcription)
 
         return {
-            "text": full_text.strip(),
-            "language": info.language
+            "text": full_text,
+            "language": language,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

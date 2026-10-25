@@ -2,7 +2,7 @@ import os
 import gc
 import tempfile
 import asyncio
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -140,7 +140,12 @@ async def chat_completions(request: ChatRequest):
 
 
 @app.post("/v1/audio/transcriptions")
-async def transcribe_audio(file: UploadFile = File(...)):
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    prompt: Optional[str] = Form(None),
+    language: Optional[str] = Form(None),
+    task: Optional[str] = Form("transcribe"),
+):
     # Save the incoming audio chunk to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
         temp_audio.write(await file.read())
@@ -150,16 +155,48 @@ async def transcribe_audio(file: UploadFile = File(...)):
         # Get Whisper (this will trigger a VRAM swap if the LLM is currently loaded)
         whisper = await manager.get_whisper()
 
-        def _run_transcription():
-            segments, info = whisper.transcribe(temp_audio_path, beam_size=5)
-            full_text = "".join([segment.text for segment in segments])
-            return full_text.strip(), info.language
+        # Sanitize parameters
+        clean_lang = (
+            language.strip().lower()
+            if language and language.strip() and language.strip().lower() != "auto"
+            else None
+        )
+        clean_task = (
+            task.strip().lower()
+            if task and task.strip().lower() in ("transcribe", "translate")
+            else "transcribe"
+        )
+        clean_prompt = prompt.strip() if prompt and prompt.strip() else None
 
-        full_text, language = await asyncio.to_thread(_run_transcription)
+        def _run_transcription():
+            kwargs = {"beam_size": 5}
+            if clean_lang:
+                kwargs["language"] = clean_lang
+            if clean_task:
+                kwargs["task"] = clean_task
+            if clean_prompt:
+                kwargs["initial_prompt"] = clean_prompt
+
+            segments, info = whisper.transcribe(temp_audio_path, **kwargs)
+            seg_list = []
+            full_text_parts = []
+            for s in segments:
+                text_part = s.text.strip()
+                if text_part:
+                    full_text_parts.append(text_part)
+                    seg_list.append({
+                        "start": round(s.start, 2),
+                        "end": round(s.end, 2),
+                        "text": text_part,
+                    })
+            return " ".join(full_text_parts).strip(), info.language, seg_list
+
+        full_text, detected_lang, seg_list = await asyncio.to_thread(_run_transcription)
 
         return {
             "text": full_text,
-            "language": language,
+            "language": detected_lang,
+            "segments": seg_list,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
